@@ -87,7 +87,7 @@ async function fetchStudents() {
 }
 
 // ==========================================
-// 3. FUNGSI UPDATE ANALYTICS & GRAPH (DONUT)
+// 3. FUNGSI UPDATE ANALYTICS & GRAPH (DONUT + CENTER TEXT)
 // ==========================================
 function updateAnalytics(total, rawan) {
     statTotal.innerText = total;
@@ -96,12 +96,31 @@ function updateAnalytics(total, rawan) {
     const aman = total - rawan;
     const ctx = document.getElementById('riskChart').getContext('2d');
 
-    // Hancurkan chart lama jika ada, agar tidak tumpang tindih saat dirender ulang
+    // Hancurkan chart lama jika ada
     if (riskChartInstance) {
         riskChartInstance.destroy();
     }
 
-    // Gambar Donut Chart baru berdasarkan data Supabase terbaru
+    // Plugin untuk menampilkan teks di tengah donut chart
+    const centerTextPlugin = {
+        id: 'centerText',
+        beforeDraw: (chart) => {
+            const { ctx, width, height } = chart;
+            ctx.restore();
+            // Mengatur ukuran font responsif
+            const fontSize = (height / 120).toFixed(2);
+            ctx.font = `bold ${fontSize}em Inter, sans-serif`;
+            ctx.textBaseline = "middle";
+            ctx.textAlign = "center";
+            ctx.fillStyle = "#1e293b"; // Warna Slate-800
+            
+            // Menampilkan Total Mahasiswa di tengah
+            ctx.fillText(total.toString(), width / 2, height / 2);
+            ctx.save();
+        }
+    };
+
+    // Gambar Donut Chart dengan Plugin
     riskChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -115,9 +134,12 @@ function updateAnalytics(total, rawan) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            cutout: '70%',
-            plugins: { legend: { display: false } }
-        }
+            cutout: '75%', // Ukuran lubang tengah
+            plugins: { 
+                legend: { display: false } 
+            }
+        },
+        plugins: [centerTextPlugin] // Daftarkan plugin di sini
     });
 }
 
