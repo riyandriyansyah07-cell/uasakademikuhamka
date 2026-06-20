@@ -10,10 +10,10 @@ const studentTableBody = document.getElementById('studentTableBody');
 const statTotal = document.getElementById('statTotal');
 const statRawan = document.getElementById('statRawan');
 
-let riskChartInstance = null; // Menyimpan instance grafik agar bisa di-update dynamic
+let riskChartInstance = null;
 
 // ==========================================
-// 1. INISIALISASI & DOCKING DATA
+// 1. INISIALISASI
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
     fetchStudents();
@@ -29,33 +29,25 @@ async function fetchStudents() {
         .order('created_at', { ascending: false });
 
     if (error) {
-        studentTableBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-red-500">Gagal memuat data server.</td></tr>`;
+        studentTableBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-red-500">Gagal memuat data.</td></tr>`;
         return;
     }
 
     studentTableBody.innerHTML = '';
-
     if (data.length === 0) {
         studentTableBody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-slate-400">Belum ada data mahasiswa.</td></tr>`;
         updateAnalytics(0, 0);
         return;
     }
 
-    // Hitung counter untuk Dashboard Analytics
     let totalMahasiswa = data.length;
     let totalRawanDO = data.filter(s => s.prediction_result === 'Berisiko').length;
-
     updateAnalytics(totalMahasiswa, totalRawanDO);
 
-    // Suntik data ke baris tabel HTML
     data.forEach(student => {
         const tr = document.createElement('tr');
         tr.className = "hover:bg-slate-50 transition";
-
-        // Pengkondisian warna label status hasil prediksi AI
-        let statusBadgeColor = "bg-slate-100 text-slate-600";
-        if (student.prediction_result === 'Aman') statusBadgeColor = "bg-emerald-100 text-emerald-700 font-bold";
-        if (student.prediction_result === 'Berisiko') statusBadgeColor = "bg-rose-100 text-rose-700 font-bold";
+        let statusBadgeColor = student.prediction_result === 'Aman' ? "bg-emerald-100 text-emerald-700 font-bold" : (student.prediction_result === 'Berisiko' ? "bg-rose-100 text-rose-700 font-bold" : "bg-slate-100 text-slate-600");
         
         tr.innerHTML = `
             <td class="p-4">
@@ -67,7 +59,7 @@ async function fetchStudents() {
             </td>
             <td class="p-4">
                 <span class="${statusBadgeColor} px-3 py-1 rounded-full text-xs">
-                    ${student.prediction_result}
+                    ${student.prediction_result || 'Belum Diprediksi'}
                 </span>
             </td>
             <td class="p-4 text-center">
@@ -79,48 +71,38 @@ async function fetchStudents() {
         `;
         studentTableBody.appendChild(tr);
     });
-
-    // Pasang Event Listener klik ke seluruh tombol "Proses AI"
-    document.querySelectorAll('.predict-btn').forEach(btn => {
-        btn.addEventListener('click', handlePrediction);
-    });
 }
 
+studentTableBody.onclick = (e) => {
+    if (e.target.classList.contains('predict-btn')) handlePrediction(e);
+};
+
 // ==========================================
-// 3. FUNGSI UPDATE ANALYTICS & GRAPH (DONUT + CENTER TEXT)
+// 3. FUNGSI UPDATE ANALYTICS & GRAPH
 // ==========================================
 function updateAnalytics(total, rawan) {
     statTotal.innerText = total;
     statRawan.innerText = rawan;
-
     const aman = total - rawan;
     const ctx = document.getElementById('riskChart').getContext('2d');
+    
+    if (riskChartInstance) riskChartInstance.destroy();
 
-    // Hancurkan chart lama jika ada
-    if (riskChartInstance) {
-        riskChartInstance.destroy();
-    }
-
-    // Plugin untuk menampilkan teks di tengah donut chart
     const centerTextPlugin = {
         id: 'centerText',
         beforeDraw: (chart) => {
             const { ctx, width, height } = chart;
             ctx.restore();
-            // Mengatur ukuran font responsif
             const fontSize = (height / 120).toFixed(2);
             ctx.font = `bold ${fontSize}em Inter, sans-serif`;
             ctx.textBaseline = "middle";
             ctx.textAlign = "center";
-            ctx.fillStyle = "#1e293b"; // Warna Slate-800
-            
-            // Menampilkan Total Mahasiswa di tengah
+            ctx.fillStyle = "#1e293b";
             ctx.fillText(total.toString(), width / 2, height / 2);
             ctx.save();
         }
     };
 
-    // Gambar Donut Chart dengan Plugin
     riskChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -131,108 +113,106 @@ function updateAnalytics(total, rawan) {
                 borderWidth: 0
             }]
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: '75%', // Ukuran lubang tengah
-            plugins: { 
-                legend: { display: false } 
-            }
-        },
-        plugins: [centerTextPlugin] // Daftarkan plugin di sini
+        options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false } } },
+        plugins: [centerTextPlugin]
     });
 }
 
 // ==========================================
-// 4. JEMBATAN API AI: PANGGIL SERVERLESS PYTHON VERCEL
+// 4. JEMBATAN API AI
 // ==========================================
 async function handlePrediction(e) {
     const btn = e.target;
     const id = btn.getAttribute('data-id');
-    
-    const originalText = btn.innerText;
     btn.innerText = "⚡ Menganalisis...";
     btn.disabled = true;
 
-    // Siapkan payload data sesuai spesifikasi Random Forest backend kita
     const payload = {
         gpa: parseFloat(btn.getAttribute('data-gpa')),
         attendance: parseFloat(btn.getAttribute('data-attendance')),
         core_grade: parseFloat(btn.getAttribute('data-core')),
         study_hours: parseFloat(btn.getAttribute('data-study')),
-        engagement: 4.0 // Nilai default konstan untuk feature ke-5 model
+        engagement: 4.0
     };
 
     try {
-        // Tembak endpoint API Vercel Python kita
         const response = await fetch('/api/predict', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-
         const result = await response.json();
-
         if (result.status === "success") {
-            // Update status hasil prediksi AI langsung ke tabel database Supabase
-            await supabase
-                .from('students')
-                .update({ prediction_result: result.risk_category })
-                .eq('id', id);
-            
-            // Muat ulang data agar visual dashboard berubah secara real-time
+            await supabase.from('students').update({ prediction_result: result.risk_category }).eq('id', id);
             fetchStudents();
         } else {
             alert("Model AI Error: " + result.message);
-            btn.innerText = originalText;
-            btn.disabled = false;
         }
     } catch (err) {
-        console.error(err);
-        alert("Gagal menghubungi server AI. Pastikan Vercel Dev / Serverless sudah berjalan.");
-        btn.innerText = originalText;
+        alert("Gagal menghubungi server AI.");
+    } finally {
+        btn.innerText = "Proses AI";
         btn.disabled = false;
     }
 }
 
 // ==========================================
-// 5. MODAL LOGIKA TAMBAH DATA (CREATE)
+// 5. MODAL LOGIKA TAMBAH DATA
 // ==========================================
 const addModal = document.getElementById('addModal');
-const addStudentBtn = document.getElementById('addStudentBtn');
-const closeModalBtn = document.getElementById('closeModalBtn');
-const cancelBtn = document.getElementById('cancelBtn');
-const addStudentForm = document.getElementById('addStudentForm');
-const saveBtn = document.getElementById('saveBtn');
+document.getElementById('addStudentBtn').onclick = () => addModal.classList.remove('hidden');
+document.getElementById('closeModalBtn').onclick = () => addModal.classList.add('hidden');
+document.getElementById('cancelBtn').onclick = () => addModal.classList.add('hidden');
 
-addStudentBtn.addEventListener('click', () => { addModal.classList.remove('hidden'); });
-const closeModal = () => { addModal.classList.add('hidden'); addStudentForm.reset(); };
-closeModalBtn.addEventListener('click', closeModal);
-cancelBtn.addEventListener('click', closeModal);
-
-addStudentForm.addEventListener('submit', async (e) => {
+document.getElementById('addStudentForm').onsubmit = async (e) => {
     e.preventDefault();
+    const saveBtn = document.getElementById('saveBtn');
     saveBtn.innerText = "Menyimpan...";
-    saveBtn.disabled = true;
+    
+    const { error } = await supabase.from('students').insert([{ 
+        nim: document.getElementById('nim').value, 
+        nama: document.getElementById('nama').value, 
+        gpa: parseFloat(document.getElementById('gpa').value), 
+        attendance: parseFloat(document.getElementById('attendance').value), 
+        core_grade: parseFloat(document.getElementById('core_grade').value), 
+        study_hours: parseInt(document.getElementById('study_hours').value),
+        status: 'Aktif'
+    }]);
 
-    const { data, error } = await supabase
-        .from('students')
-        .insert([{ 
-            nim: document.getElementById('nim').value, 
-            nama: document.getElementById('nama').value, 
-            gpa: parseFloat(document.getElementById('gpa').value), 
-            attendance: parseFloat(document.getElementById('attendance').value), 
-            core_grade: parseFloat(document.getElementById('core_grade').value), 
-            study_hours: parseInt(document.getElementById('study_hours').value),
-            status: 'Aktif'
-        }]);
-
-    if (error) {
-        alert("Gagal: " + error.message);
-    } else {
-        closeModal();
-        fetchStudents();
-    }
+    if (error) alert("Gagal: " + error.message);
+    else { addModal.classList.add('hidden'); fetchStudents(); }
     saveBtn.innerText = "Simpan Data";
-    saveBtn.disabled = false;
-});
+};
+
+// ==========================================
+// 6. AUTO-SEEDER (Fungsi Inject 1000 Data)
+// ==========================================
+window.seedDatabase = async function() {
+    console.log("Memulai injeksi data...");
+    const firstNames = ["Budi", "Siti", "Agus", "Dewi", "Andi", "Rina", "Fajar", "Indah", "Riyan", "Putri"];
+    const lastNames = ["Santoso", "Pratama", "Hidayat", "Putri", "Wijaya", "Lestari", "Ramadhan"];
+    
+    const totalData = 1000;
+    const batchSize = 100;
+    
+    for (let i = 0; i < totalData / batchSize; i++) {
+        let batch = [];
+        for (let j = 0; j < batchSize; j++) {
+            batch.push({
+                nim: "2026" + Math.floor(10000 + Math.random() * 90000),
+                nama: `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`,
+                gpa: parseFloat((2.0 + Math.random() * 2.0).toFixed(2)),
+                attendance: Math.floor(60 + Math.random() * 40),
+                core_grade: parseFloat((2.0 + Math.random() * 2.0).toFixed(2)),
+                study_hours: Math.floor(5 + Math.random() * 20),
+                prediction_result: Math.random() > 0.8 ? 'Berisiko' : 'Aman',
+                status: 'Aktif'
+            });
+        }
+        const { error } = await supabase.from('students').insert(batch);
+        if (error) console.error("Gagal Batch " + i, error);
+        else console.log(`Batch ${i+1} sukses.`);
+    }
+    fetchStudents();
+    alert("Injeksi 1000 data selesai!");
+};
