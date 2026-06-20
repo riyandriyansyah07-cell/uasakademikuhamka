@@ -73,6 +73,7 @@ async function fetchStudents() {
     });
 }
 
+// Event Delegation (Tombol AI)
 studentTableBody.onclick = (e) => {
     if (e.target.classList.contains('predict-btn')) handlePrediction(e);
 };
