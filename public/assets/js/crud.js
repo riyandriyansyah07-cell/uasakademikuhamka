@@ -73,7 +73,7 @@ async function fetchStudents() {
     });
 }
 
-// Event Delegation (Tombol AI)
+// Event Delegation (Lebih efisien)
 studentTableBody.onclick = (e) => {
     if (e.target.classList.contains('predict-btn')) handlePrediction(e);
 };
@@ -85,7 +85,12 @@ function updateAnalytics(total, rawan) {
     statTotal.innerText = total;
     statRawan.innerText = rawan;
     const aman = total - rawan;
-    const ctx = document.getElementById('riskChart').getContext('2d');
+    
+    // Check canvas element existence
+    const canvas = document.getElementById('riskChart');
+    if (!canvas) return; 
+    
+    const ctx = canvas.getContext('2d');
     
     if (riskChartInstance) riskChartInstance.destroy();
 
@@ -125,6 +130,7 @@ function updateAnalytics(total, rawan) {
 async function handlePrediction(e) {
     const btn = e.target;
     const id = btn.getAttribute('data-id');
+    const originalText = btn.innerText;
     btn.innerText = "⚡ Menganalisis...";
     btn.disabled = true;
 
@@ -152,7 +158,7 @@ async function handlePrediction(e) {
     } catch (err) {
         alert("Gagal menghubungi server AI.");
     } finally {
-        btn.innerText = "Proses AI";
+        btn.innerText = originalText;
         btn.disabled = false;
     }
 }
@@ -189,7 +195,7 @@ document.getElementById('addStudentForm').onsubmit = async (e) => {
 // 6. AUTO-SEEDER (Fungsi Inject 1000 Data)
 // ==========================================
 window.seedDatabase = async function() {
-    console.log("Memulai injeksi data...");
+    console.log("Memulai injeksi data (Mode Anti-Duplikat)...");
     const firstNames = ["Budi", "Siti", "Agus", "Dewi", "Andi", "Rina", "Fajar", "Indah", "Riyan", "Putri"];
     const lastNames = ["Santoso", "Pratama", "Hidayat", "Putri", "Wijaya", "Lestari", "Ramadhan"];
     
@@ -199,8 +205,9 @@ window.seedDatabase = async function() {
     for (let i = 0; i < totalData / batchSize; i++) {
         let batch = [];
         for (let j = 0; j < batchSize; j++) {
+            let uniqueNim = "2026" + (i * batchSize + j + 1000).toString();
             batch.push({
-                nim: "2026" + Math.floor(10000 + Math.random() * 90000),
+                nim: uniqueNim,
                 nama: `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`,
                 gpa: parseFloat((2.0 + Math.random() * 2.0).toFixed(2)),
                 attendance: Math.floor(60 + Math.random() * 40),
@@ -211,9 +218,9 @@ window.seedDatabase = async function() {
             });
         }
         const { error } = await supabase.from('students').insert(batch);
-        if (error) console.error("Gagal Batch " + i, error);
+        if (error) { console.error("Gagal Batch " + i, error); break; }
         else console.log(`Batch ${i+1} sukses.`);
     }
     fetchStudents();
-    alert("Injeksi 1000 data selesai!");
+    alert("Injeksi 1000 data selesai! Silakan Refresh.");
 };
